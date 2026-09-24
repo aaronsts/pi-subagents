@@ -32,7 +32,7 @@ Ask Pi explicitly, for example:
 - `Use scout to map the authentication flow.`
 - `Run reviewer and oracle in parallel on this plan.`
 
-The parent calls `subagent` with a task, one to three fixed roles, and optional paths or diff.
+The parent calls `subagent` with a task, one to three fixed roles, and optional paths or diff. Include relevant decisions and constraints in the task when using `oracle`: children do not receive the parent conversation. Reviewers cannot fetch a Git diff or run tests, so supply the diff when a diff review is needed.
 
 ## Safety model
 
@@ -43,7 +43,8 @@ See [DESIGN.md](DESIGN.md) for the full v1 boundary and verification plan.
 ## Test
 
 ```bash
-node --experimental-strip-types --test test/safe-files.test.ts
+pnpm test
+pnpm typecheck
 ```
 
 A real-child smoke test is intentionally manual because it uses the configured provider and may incur cost.

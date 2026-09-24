@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { RoleName } from "./roles.ts";
-import { buildSystemPrompt } from "./roles.ts";
+import { buildSystemPrompt, buildTaskMessage } from "./roles.ts";
 
 const CHILD_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_WORDS = 1_500;
@@ -36,25 +36,29 @@ function capWords(text: string): string {
 	return limited.length <= MAX_OUTPUT_CHARS ? limited : `${limited.slice(0, MAX_OUTPUT_CHARS)}\n\n[Output truncated at ${MAX_OUTPUT_CHARS} characters.]`;
 }
 
-async function systemPromptFile(role: RoleName, input: { task: string; paths?: string[]; diff?: string }) {
+async function systemPromptFile(role: RoleName) {
 	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagents-"));
 	const file = path.join(directory, `${role}.md`);
-	await fs.promises.writeFile(file, buildSystemPrompt(role, input), { encoding: "utf8", mode: 0o600 });
+	await fs.promises.writeFile(file, buildSystemPrompt(role), { encoding: "utf8", mode: 0o600 });
 	return { directory, file };
 }
 
+export function buildChildArgs(promptFile: string, input: { task: string; paths?: string[]; diff?: string; extensionPath: string; model: string }): string[] {
+	return [
+		"--mode", "json", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-builtin-tools",
+		"--extension", input.extensionPath,
+		"--model", input.model,
+		"--thinking", "medium",
+		"--append-system-prompt", promptFile,
+		"-p", buildTaskMessage(input),
+	];
+}
+
 export async function runChild(input: { role: RoleName; task: string; paths?: string[]; diff?: string; cwd: string; model: string; extensionPath: string; signal: AbortSignal }): Promise<ChildResult> {
-	const prompt = await systemPromptFile(input.role, input);
+	const prompt = await systemPromptFile(input.role);
 	try {
 		return await new Promise((resolve) => {
-			const invocation = piInvocation([
-				"--mode", "json", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-builtin-tools",
-				"--extension", input.extensionPath,
-				"--model", input.model,
-				"--thinking", "medium",
-				"--append-system-prompt", prompt.file,
-				"-p", "Complete the delegated role task using only the available project tools.",
-			]);
+			const invocation = piInvocation(buildChildArgs(prompt.file, input));
 			const child = spawn(invocation.command, invocation.args, { cwd: input.cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
 			let output = "";
 			let stderr = "";
