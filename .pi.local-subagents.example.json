@@ -1,0 +1,4 @@
+{
+  "enabled": true,
+  "childModel": "openai-codex/gpt-6-luna"
+}

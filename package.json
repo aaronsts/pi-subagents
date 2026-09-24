@@ -1,0 +1,26 @@
+{
+  "name": "pi-subagents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Small, read-only parallel scout, reviewer, and oracle subagents for Pi",
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@types/node": "26.6.2",
+    "typebox": "^1.3.34",
+    "typescript": "5.9.3"
+  }
+}
