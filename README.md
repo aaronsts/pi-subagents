@@ -32,7 +32,7 @@ Ask Pi explicitly, for example:
 - `Use scout to map the authentication flow.`
 - `Run reviewer and oracle in parallel on this plan.`
 
-The parent calls `subagent` with a task, one to three fixed roles, and optional paths or diff. Include relevant decisions and constraints in the task when using `oracle`: children do not receive the parent conversation. Reviewers cannot fetch a Git diff or run tests, so supply the diff when a diff review is needed.
+The parent calls `subagent` with a task, one to three fixed roles, and optional paths or diff. Selecting `reviewer` launches three independent read-only passes in parallel: correctness/security, regressions/tests, and maintainability. The parent checks and deduplicates their findings; three passes use three child model calls, or up to five when combined with scout and oracle. Include relevant decisions and constraints in the task when using `oracle`: children do not receive the parent conversation. Reviewers cannot fetch a Git diff or run tests, so supply the diff when a diff review is needed.
 
 ## Safety model
 

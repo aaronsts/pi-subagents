@@ -3,7 +3,7 @@ import { StringDecoder } from "node:string_decoder";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { RoleName } from "./roles.ts";
+import type { RoleName, ReviewAngle } from "./roles.ts";
 import { buildSystemPrompt, buildTaskMessage } from "./roles.ts";
 
 const CHILD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -12,7 +12,7 @@ const MAX_EVENT_BYTES = 4 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
 const MAX_OUTPUT_CHARS = 32_000;
 
-export type ChildResult = { role: RoleName; status: "completed" | "failed" | "timed-out" | "cancelled"; output: string };
+export type ChildResult = { role: RoleName; angle?: ReviewAngle; status: "completed" | "failed" | "timed-out" | "cancelled"; output: string };
 
 function piInvocation(args: string[]) {
 	const script = process.argv[1];
@@ -36,10 +36,10 @@ function capWords(text: string): string {
 	return limited.length <= MAX_OUTPUT_CHARS ? limited : `${limited.slice(0, MAX_OUTPUT_CHARS)}\n\n[Output truncated at ${MAX_OUTPUT_CHARS} characters.]`;
 }
 
-async function systemPromptFile(role: RoleName) {
+async function systemPromptFile(role: RoleName, angle?: ReviewAngle) {
 	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagents-"));
-	const file = path.join(directory, `${role}.md`);
-	await fs.promises.writeFile(file, buildSystemPrompt(role), { encoding: "utf8", mode: 0o600 });
+	const file = path.join(directory, `${role}${angle ? `-${angle}` : ""}.md`);
+	await fs.promises.writeFile(file, buildSystemPrompt(role, angle), { encoding: "utf8", mode: 0o600 });
 	return { directory, file };
 }
 
@@ -54,8 +54,9 @@ export function buildChildArgs(promptFile: string, input: { task: string; paths?
 	];
 }
 
-export async function runChild(input: { role: RoleName; task: string; paths?: string[]; diff?: string; cwd: string; model: string; extensionPath: string; signal: AbortSignal }): Promise<ChildResult> {
-	const prompt = await systemPromptFile(input.role);
+export async function runChild(input: { role: RoleName; angle?: ReviewAngle; task: string; paths?: string[]; diff?: string; cwd: string; model: string; extensionPath: string; signal: AbortSignal }): Promise<ChildResult> {
+	const prompt = await systemPromptFile(input.role, input.angle);
+	const identity = { role: input.role, ...(input.angle ? { angle: input.angle } : {}) };
 	try {
 		return await new Promise((resolve) => {
 			const invocation = piInvocation(buildChildArgs(prompt.file, input));
@@ -104,12 +105,12 @@ export async function runChild(input: { role: RoleName; task: string; paths?: st
 					buffer += decoder.end();
 					if (buffer && Buffer.byteLength(buffer) <= MAX_EVENT_BYTES) output = finalAssistantText(buffer) ?? output;
 				}
-				if (stopped === "timed-out") resolve({ role: input.role, status: "timed-out", output: "Child exceeded the 10-minute deadline." });
-				else if (stopped === "cancelled") resolve({ role: input.role, status: "cancelled", output: "Child was cancelled with the parent request." });
-				else if (stopped === "overflow") resolve({ role: input.role, status: "failed", output: "Child output exceeded the size limit." });
-				else if (spawnError) resolve({ role: input.role, status: "failed", output: spawnError.message });
-				else if (code === 0) resolve({ role: input.role, status: "completed", output: capWords(output || "(no output)") });
-				else resolve({ role: input.role, status: "failed", output: capWords(stderr.trim() || output || `Child exited with code ${code ?? "unknown"}.`) });
+				if (stopped === "timed-out") resolve({ ...identity, status: "timed-out", output: "Child exceeded the 10-minute deadline." });
+				else if (stopped === "cancelled") resolve({ ...identity, status: "cancelled", output: "Child was cancelled with the parent request." });
+				else if (stopped === "overflow") resolve({ ...identity, status: "failed", output: "Child output exceeded the size limit." });
+				else if (spawnError) resolve({ ...identity, status: "failed", output: spawnError.message });
+				else if (code === 0) resolve({ ...identity, status: "completed", output: capWords(output || "(no output)") });
+				else resolve({ ...identity, status: "failed", output: capWords(stderr.trim() || output || `Child exited with code ${code ?? "unknown"}.`) });
 			});
 			child.on("error", (error) => { spawnError = error; });
 		});

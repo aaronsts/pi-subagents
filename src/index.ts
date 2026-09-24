@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { isRoleName, ROLE_NAMES, type RoleName } from "./roles.ts";
+import { expandRoles, isRoleName, ROLE_NAMES, type RoleName } from "./roles.ts";
 import { runChild, type ChildResult } from "./runner.ts";
 
 const CONFIG_FILE = path.join(".pi", "local-subagents.json");
@@ -21,8 +21,8 @@ function loadConfig(cwd: string): { enabled: boolean; childModel?: string } {
 	}
 }
 
-function resultText(results: ChildResult[]) {
-	return results.map((result) => `## ${result.role} — ${result.status}\n\n${result.output}`).join("\n\n---\n\n");
+export function resultText(results: ChildResult[]) {
+	return results.map((result) => `## ${result.role}${result.angle ? ` / ${result.angle}` : ""} — ${result.status}\n\n${result.output}`).join("\n\n---\n\n");
 }
 
 const Params = Type.Object({
@@ -36,7 +36,7 @@ export default function registerSubagents(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
-		description: "Explicitly delegate a codebase scouting, review, or plan-challenge task to one to three read-only child agents. Use only when the current user explicitly requests delegation. Children run in parallel, use openai-codex/gpt-6-luna, and cannot edit files or run shell commands.",
+		description: "Explicitly delegate a codebase scouting, review, or plan-challenge task to one to three read-only roles. Reviewer fans out into three parallel angles (correctness/security, regressions/tests, maintainability), so a request may launch up to five children. Use only when the current user explicitly requests delegation. Children use the configured model and cannot edit files or run shell commands.",
 		parameters: Params,
 		execute: async (_id, input, signal, _onUpdate, ctx) => {
 			const config = loadConfig(ctx.cwd);
@@ -46,10 +46,10 @@ export default function registerSubagents(pi: ExtensionAPI) {
 				throw new Error(`roles must contain unique values from: ${ROLE_NAMES.join(", ")}.`);
 			}
 			const extensionPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "child-tools.ts");
-			const roles = input.roles as RoleName[];
-			const results = await Promise.all(roles.map((role) => runChild({ role, task: input.task, paths: input.paths, diff: input.diff, cwd: ctx.cwd, model: config.childModel!, extensionPath, signal: signal ?? new AbortController().signal })));
+			const assignments = expandRoles(input.roles as RoleName[]);
+			const results = await Promise.all(assignments.map(({ role, angle }) => runChild({ role, angle, task: input.task, paths: input.paths, diff: input.diff, cwd: ctx.cwd, model: config.childModel!, extensionPath, signal: signal ?? new AbortController().signal })));
 			return {
-				content: [{ type: "text", text: `${resultText(results)}\n\nSynthesize these labelled advisory results, preserve disagreement, and distinguish evidence from recommendations.` }],
+				content: [{ type: "text", text: `${resultText(results)}\n\nSynthesize these labelled advisory results. For reviewer findings, independently check each candidate against available source or supplied diff evidence before reporting it, deduplicate overlapping findings, and retain distinct evidence or disagreement. Do not claim tests were run or a diff was inspected when they were not. Treat failed or incomplete review angles as coverage gaps, not clean passes. Distinguish evidence from recommendations.` }],
 				details: { results },
 			};
 		},
